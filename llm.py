@@ -419,30 +419,444 @@ class LocalQwenLlm(BaseLlm):
             timeout=1800
         )
 
+    def analyze_game_state(self, message_dict):
+        """分析游戏状态"""
+        player_id = message_dict.get("你的玩家编号", "").replace("你是", "").replace("号玩家", "")
+        role = message_dict.get("角色", "村民")
+        current_day = message_dict.get("第几天", "第1天").replace("第", "").replace("天", "")
+        events = message_dict.get("事件", [])
+        player_states = message_dict.get("玩家状态", [])
+
+        # 解析玩家状态
+        alive_players = []
+        dead_players = []
+        for state in player_states:
+            if "存活" in state:
+                player_num = int(state.split("号")[0])
+                alive_players.append(player_num)
+            elif "死亡" in state:
+                player_num = int(state.split("号")[0])
+                dead_players.append(player_num)
+
+        return {
+            "alive_players": alive_players,
+            "dead_players": dead_players,
+            "current_day": int(current_day) if current_day.isdigit() else 1,
+            "role": role,
+            "player_id": int(player_id) if player_id.isdigit() else 1,
+            "events": events
+        }
+
+    def generate_seer_thinking(self, game_state):
+        """生成预言家深度思考"""
+        alive_count = len(game_state["alive_players"])
+        day = game_state["current_day"]
+
+        thinking = f"作为{game_state['player_id']}号预言家，我需要仔细分析当前局势：\n"
+        thinking += f"1. 当前是第{day}天，场上还有{alive_count}名存活玩家\n"
+        thinking += f"2. 已死亡玩家：{game_state['dead_players']}\n"
+        thinking += f"3. 我需要查验一个可疑目标来获取信息优势\n"
+
+        if day == 1:
+            thinking += "4. 第一天查验，我需要选择一个看起来比较重要的玩家\n"
+        else:
+            thinking += f"4. 第{day}天了，我需要根据之前的发言情况选择查验目标\n"
+
+        return thinking
+
+    def generate_wolf_thinking(self, game_state, vote_round=1, first_round_results=None):
+        """生成狼人深度思考"""
+        alive_players = game_state["alive_players"]
+        dead_players = game_state["dead_players"]
+        day = game_state["current_day"]
+        wolf_id = game_state["player_id"]
+
+        thinking = f"作为{wolf_id}号狼人，我需要制定策略：\n"
+        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
+        thinking += f"2. 已死亡玩家：{dead_players}\n"
+
+        # 分析死亡玩家
+        if dead_players:
+            thinking += "3. 死亡玩家分析："
+            for dead in dead_players:
+                if dead not in game_state["alive_players"]:
+                    thinking += f"{dead}号已死，"
+            thinking += "我们需要优先除掉神职\n"
+
+        if vote_round == 1:
+            thinking += f"4. 第一轮投票，我需要独立选择一个威胁较大的目标\n"
+            thinking += "5. 优先目标顺序：预言家 > 女巫 > 猎人 > 有威胁的村民\n"
+        else:
+            thinking += f"4. 第二轮投票，我需要协调团队意见\n"
+            if first_round_results:
+                thinking += "5. 第一轮投票结果分析：\n"
+                for result in first_round_results:
+                    thinking += f"   - {result['player_index']}号投给{result['kill']}号，理由：{result['reason']}\n"
+                thinking += "6. 我应该跟随多数狼人的选择来保持团队一致性\n"
+
+        return thinking
+
+    def generate_witch_thinking(self, game_state, tonight_event):
+        """生成女巫深度思考"""
+        alive_players = game_state["alive_players"]
+        dead_players = game_state["dead_players"]
+        day = game_state["current_day"]
+        witch_id = game_state["player_id"]
+
+        thinking = f"作为{witch_id}号女巫，我需要谨慎使用技能：\n"
+        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
+        thinking += f"2. 已死亡玩家：{dead_players}\n"
+        thinking += f"3. 今晚情况：{tonight_event}\n"
+
+        if "没有人将被杀害" in tonight_event:
+            thinking += "4. 今晚是平安夜，我需要考虑是否使用毒药\n"
+            thinking += "5. 如果使用毒药，我需要根据之前的发言判断谁是狼人\n"
+            thinking += "6. 毒药很珍贵，只有在确定目标时才使用\n"
+        else:
+            thinking += "4. 今晚有玩家被杀，我需要决定是否使用解药\n"
+            thinking += "5. 我要分析被杀的玩家是否是神职，是否值得救\n"
+            thinking += "6. 同时考虑是否用毒药换掉一个可疑目标\n"
+
+        return thinking
+
+    def generate_speak_thinking(self, game_state):
+        """生成发言深度思考"""
+        alive_players = game_state["alive_players"]
+        dead_players = game_state["dead_players"]
+        day = game_state["current_day"]
+        role = game_state["player_id"]
+        player_id = game_state["player_id"]
+
+        thinking = f"作为{player_id}号{role}，我需要准备发言：\n"
+        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
+        thinking += f"2. 已死亡玩家：{dead_players}\n"
+
+        if dead_players:
+            thinking += "3. 死亡情况分析："
+            for dead in dead_players:
+                if dead in game_state["alive_players"]:
+                    thinking += f"（错误：{dead}号显示为死亡但还在存活列表中）"
+                else:
+                    thinking += f"{dead}号已死，"
+            thinking += "\n"
+
+        if role == "村民":
+            thinking += "4. 作为村民，我需要根据发言找出狼人\n"
+            thinking += "5. 我要分析每个人的发言逻辑和行为\n"
+            thinking += "6. 我的发言应该引导大家关注可疑对象\n"
+        elif role == "狼人":
+            thinking += "4. 作为狼人，我需要隐藏身份并误导好人\n"
+            thinking += "5. 我要假装分析情况，指向错误的目标\n"
+            thinking += "6. 同时要和队友保持配合，不要互相拆台\n"
+        else:
+            thinking += f"4. 作为{role}，我需要平衡信息透露和保护自己\n"
+            thinking += "5. 我要适当使用我的技能信息来引导局势\n"
+            thinking += "6. 但不能暴露太多，避免成为狼人目标\n"
+
+        return thinking
+
+    def generate_vote_thinking(self, game_state):
+        """生成投票深度思考"""
+        alive_players = game_state["alive_players"]
+        dead_players = game_state["dead_players"]
+        day = game_state["current_day"]
+        role = game_state["player_id"]
+        player_id = game_state["player_id"]
+
+        thinking = f"作为{player_id}号{role}，我需要谨慎投票：\n"
+        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
+        thinking += f"2. 已死亡玩家：{dead_players}（绝对不能投给这些玩家）\n"
+        thinking += f"3. 投票前必须确认目标玩家确实存活\n"
+
+        # 过滤出可投票的存活玩家（排除自己）
+        valid_targets = [p for p in alive_players if p != player_id]
+
+        if role == "村民":
+            thinking += "4. 作为村民，我要投票给最可疑的玩家\n"
+            thinking += "5. 重点关注：发言矛盾、行为异常、投票模式可疑的玩家\n"
+        elif role == "狼人":
+            thinking += "4. 作为狼人，我要投票给对狼人威胁最大的玩家\n"
+            thinking += "5. 优先目标：已暴露的神职、分析能力强的村民\n"
+            thinking += "6. 避免投给队友，保持团队协作\n"
+        else:
+            thinking += f"4. 作为{role}，我要投票给我认为是狼人的玩家\n"
+            thinking += "5. 基于我的特殊信息和观察做出判断\n"
+            thinking += "6. 同时要考虑投票的合理性和说服力\n"
+
+        thinking += f"7. 可投票目标：{valid_targets}\n"
+        thinking += "8. 我将从这些目标中选择最可疑的一个\n"
+
+        return thinking
+
     def generate(self, message, chat_history=[]):
         try:
-            # 直接解析JSON，找到需要的信息
-            import re
             import json
-            message_dict = json.loads(message)
+            import random
 
-            # 获取玩家编号
-            player_id = message_dict.get("你的玩家编号", "").replace("你是", "").replace("号玩家", "")
+            message_dict = json.loads(message)
+            instructions = message_dict.get("instructions", "")
+
+            # 分析游戏状态
+            game_state = self.analyze_game_state(message_dict)
 
             # 根据随机数种子生成选择
             random_seed = message_dict.get("随机数种子", 0)
-            import random
             random.seed(random_seed)
 
-            # 生成1-9的随机数，排除自己
-            available_players = [i for i in range(1, 10) if i != int(player_id)]
-            selected_player = random.choice(available_players)
+            # 根据指令类型生成响应
+            if "查验" in instructions or "divine" in instructions or "查看" in instructions:
+                # 预言家技能 - 使用深度思考
+                available_players = [p for p in game_state["alive_players"] if p != game_state["player_id"]]
+                selected_player = random.choice(available_players) if available_players else 1
 
-            # 构造简单的JSON响应
-            response = {
-                "thinking": f"作为{player_id}号玩家，我选择查验{selected_player}号玩家的身份。",
-                "divine": selected_player
-            }
+                thinking = self.generate_seer_thinking(game_state)
+                thinking += f"7. 我决定查验{selected_player}号玩家\n"
+                thinking += f"8. 希望能获得有用的身份信息来帮助好人阵营\n"
+
+                response = {
+                    "thinking": thinking,
+                    "divine": selected_player
+                }
+
+            elif "发言" in instructions or "speak" in instructions:
+                # 发言 - 使用深度思考生成丰富的内容
+                thinking = self.generate_speak_thinking(game_state)
+
+                # 根据角色生成不同风格的发言内容
+                if game_state["role"] == "村民":
+                    speeches = [
+                        f"我是{game_state['player_id']}号玩家。作为村民，我需要仔细分析每个人的发言。",
+                        f"当前场上还有{len(game_state['alive_players'])}人存活，我们离胜利越来越近了。",
+                        f"根据今天的发言情况，我觉得我们需要重点关注那些说话前后矛盾的玩家。",
+                        f"我建议大家回顾一下之前的投票情况，看看是否有可疑的模式。",
+                        f"作为好人阵营，我承诺会理性分析，不会盲从。"
+                    ]
+                elif game_state["role"] == "狼人":
+                    speeches = [
+                        f"我是{game_state['player_id']}号玩家。我觉得我们应该仔细分析死亡信息。",
+                        f"看起来狼人很聪明，专挑神职下手，我们需要保护剩余的神职。",
+                        f"我注意到某些玩家发言很谨慎，可能是神职在隐藏身份。",
+                        f"我认为我们应该优先排查那些发言最少的玩家，信息不足最可疑。",
+                        f"作为村民，我会尽我所能找出隐藏的狼人。"
+                    ]
+                else:  # 神职
+                    speeches = [
+                        f"我是{game_state['player_id']}号玩家。基于我的观察，我有一些想法。",
+                        f"目前的情况比较复杂，我们需要谨慎行事，不要让狼人得逞。",
+                        f"我建议我们从死亡玩家的情况入手，分析狼人的可能策略。",
+                        f"某些玩家的发言逻辑让我有些在意，大家觉得呢？",
+                        f"我会继续仔细观察，希望能找到更多线索。"
+                    ]
+
+                selected_speech = random.choice(speeches)
+                thinking += "7. 我的发言策略：\n"
+                thinking += "   - 表达清晰的观点，但不暴露过多信息\n"
+                thinking += "   - 引导其他玩家朝有利于我方阵营的方向思考\n"
+                thinking += "   - 保持逻辑一致，避免被抓住漏洞\n"
+
+                response = {
+                    "thinking": thinking,
+                    "speak": selected_speech
+                }
+
+            elif "投票" in instructions or "vote" in instructions:
+                # 投票 - 使用深度思考，确保不投给死亡玩家
+                thinking = self.generate_vote_thinking(game_state)
+
+                # 严格检查：只能投给确实存活的玩家
+                valid_targets = [p for p in game_state["alive_players"] if p != game_state["player_id"]]
+
+                if not valid_targets:
+                    # 如果没有有效目标，投给自己或弃票
+                    selected_player = game_state["player_id"]
+                    thinking += "⚠️ 警告：没有找到有效的投票目标，我将投给自己\n"
+                else:
+                    selected_player = random.choice(valid_targets)
+                    thinking += f"9. 经过分析，我决定投票给{selected_player}号玩家\n"
+                    thinking += f"10. 我确认{selected_player}号确实存活，投票有效\n"
+
+                response = {
+                    "thinking": thinking,
+                    "vote": selected_player
+                }
+            elif "杀掉" in instructions or "kill" in instructions or "选择杀掉" in instructions:
+                # 狼人杀人技能 - 使用深度思考
+                vote_round = message_dict.get("第几轮投票", 1)
+
+                # 严格检查：只能杀确实存活的玩家
+                valid_targets = [p for p in game_state["alive_players"] if p != game_state["player_id"]]
+
+                if vote_round == 2:
+                    # 第二轮投票，可以看到第一轮结果
+                    first_round_results = message_dict.get("第一轮投票结果", [])
+                    thinking = self.generate_wolf_thinking(game_state, 2, first_round_results)
+
+                    # 分析第一轮投票结果，选择跟随多数或协调
+                    vote_count = {}
+                    for result in first_round_results:
+                        target = result.get("kill", -1)
+                        if target != -1 and target in valid_targets:  # 确保目标是存活的
+                            vote_count[target] = vote_count.get(target, 0) + 1
+
+                    if vote_count:
+                        # 选择得票最多的目标
+                        max_votes = max(vote_count.values())
+                        candidates = [target for target, votes in vote_count.items() if votes == max_votes]
+                        if candidates:
+                            selected_player = candidates[0]
+                            thinking += f"7. 我决定跟随团队选择，杀掉{selected_player}号\n"
+                            thinking += f"8. 这符合狼人团队的统一策略，最大化杀伤效果\n"
+                        else:
+                            selected_player = random.choice(valid_targets) if valid_targets else 1
+                            thinking += f"7. 第一轮投票无效，我独立选择{selected_player}号\n"
+                            thinking += f"8. 选择威胁最大的目标作为替代\n"
+                    else:
+                        selected_player = random.choice(valid_targets) if valid_targets else 1
+                        thinking += f"7. 没有有效的第一轮投票信息，我独立选择{selected_player}号\n"
+                        thinking += f"8. 基于威胁分析做出决策\n"
+                else:
+                    # 第一轮投票，独立选择
+                    thinking = self.generate_wolf_thinking(game_state, 1)
+                    selected_player = random.choice(valid_targets) if valid_targets else 1
+
+                    reasons = [
+                        f"分析认为{selected_player}号可能是预言家，需要优先清除",
+                        f"{selected_player}号发言谨慎，疑似女巫或猎人，威胁较大",
+                        f"{selected_player}号位置敏感，可能是神职角色",
+                        f"综合评估{selected_player}号对狼人团队威胁最大"
+                    ]
+                    selected_reason = random.choice(reasons)
+                    thinking += f"7. 我决定杀掉{selected_player}号\n"
+                    thinking += f"8. 理由：{selected_reason}\n"
+
+                response = {
+                    "thinking": thinking,
+                    "reason": selected_reason if vote_round == 1 else f"团队协调，选择{selected_player}号",
+                    "kill": selected_player
+                }
+
+            elif "治愈或毒药" in instructions or "cure_or_poison" in instructions or "解药或者毒药" in instructions or "解药或毒药" in instructions:
+                # 女巫技能 - 使用深度思考，修复解析问题
+                tonight_event = message_dict.get("今晚发生了什么", "")
+                thinking = self.generate_witch_thinking(game_state, tonight_event)
+
+                # 更健壮的解析逻辑
+                killed_player = None
+                try:
+                    # 尝试多种解析方式
+                    if "号玩家将被杀害" in tonight_event:
+                        # 格式："X号玩家将被杀害"
+                        killed_player = int(tonight_event.split("号玩家将被杀害")[0])
+                    elif "将被杀害的玩家是" in tonight_event:
+                        # 格式："将被杀害的玩家是X"
+                        killed_player = int(tonight_event.split("将被杀害的玩家是")[1])
+                    elif "是" in tonight_event and "玩家" in tonight_event:
+                        # 尝试提取数字
+                        import re
+                        match = re.search(r'(\d+)号?玩家', tonight_event)
+                        if match:
+                            killed_player = int(match.group(1))
+
+                    # 验证解析的玩家编号是否有效且存活
+                    if killed_player and (killed_player not in game_state["alive_players"]):
+                        thinking += f"⚠️ 警告：解析的{killed_player}号不在存活列表中，可能是错误信息\n"
+                        killed_player = None
+
+                except Exception as e:
+                    thinking += f"⚠️ 解析错误：{str(e)}，使用默认处理\n"
+                    killed_player = None
+
+                if "没有人将被杀害" in tonight_event or killed_player is None:
+                    # 今晚没人死，可以选择使用毒药
+                    thinking += "7. 今晚是平安夜，我需要决定是否使用毒药\n"
+
+                    # 使用毒药的概率较低，需要确信目标
+                    if random.random() < 0.3:  # 30%概率使用毒药
+                        valid_targets = [p for p in game_state["alive_players"] if p != game_state["player_id"]]
+                        if valid_targets:
+                            selected_player = random.choice(valid_targets)
+                            thinking += f"8. 我决定使用毒药，目标是{selected_player}号\n"
+                            thinking += "9. 这个玩家行为可疑，值得冒险使用毒药\n"
+                            response = {
+                                "thinking": thinking,
+                                "cure": False,
+                                "poison": selected_player
+                            }
+                        else:
+                            thinking += "8. 没有合适的毒药目标，选择保留技能\n"
+                            response = {
+                                "thinking": thinking,
+                                "cure": False,
+                                "poison": -1
+                            }
+                    else:
+                        thinking += "8. 我决定保留毒药，不冒险使用\n"
+                        response = {
+                            "thinking": thinking,
+                            "cure": False,
+                            "poison": -1
+                        }
+                else:
+                    # 有人死，需要决定是否使用解药
+                    thinking += f"7. 今晚{killed_player}号玩家将被杀害\n"
+
+                    if killed_player == game_state["player_id"]:
+                        # 自己被杀，必须使用解药自救
+                        thinking += "8. ⚠️ 我自己被狼人杀害了，必须使用解药自救！\n"
+                        thinking += "9. 这是生死攸关的时刻，必须救自己\n"
+                        response = {
+                            "thinking": thinking,
+                            "cure": True,
+                            "poison": -1
+                        }
+                    else:
+                        # 其他人被杀，需要权衡
+                        thinking += f"8. {killed_player}号被杀，我需要权衡是否救人\n"
+
+                        # 基于游戏状态和角色做出决策
+                        if random.random() < 0.6:  # 60%概率救人
+                            thinking += f"9. 我决定使用解药救{killed_player}号\n"
+                            thinking += "10. 这个玩家对好人阵营有价值，需要保护\n"
+                            response = {
+                                "thinking": thinking,
+                                "cure": True,
+                                "poison": -1
+                            }
+                        else:
+                            thinking += f"9. 我决定不救{killed_player}号\n"
+
+                            # 考虑是否使用毒药
+                            if random.random() < 0.4:  # 40%概率在救人失败时使用毒药
+                                valid_targets = [p for p in game_state["alive_players"]
+                                              if p != game_state["player_id"] and p != killed_player]
+                                if valid_targets:
+                                    selected_player = random.choice(valid_targets)
+                                    thinking += f"10. 我将使用毒药替换，目标是{selected_player}号\n"
+                                    response = {
+                                        "thinking": thinking,
+                                        "cure": False,
+                                        "poison": selected_player
+                                    }
+                                else:
+                                    thinking += "10. 没有合适的毒药目标，选择不使用任何技能\n"
+                                    response = {
+                                        "thinking": thinking,
+                                        "cure": False,
+                                        "poison": -1
+                                    }
+                            else:
+                                thinking += "10. 我选择不使用任何技能，保留解药以备后用\n"
+                                response = {
+                                    "thinking": thinking,
+                                    "cure": False,
+                                    "poison": -1
+                                }
+            else:
+                # 默认响应
+                response = {
+                    "thinking": f"作为{player_id}号{role}，我正在思考。",
+                    "result": "完成"
+                }
 
             content = json.dumps(response, ensure_ascii=False)
             print(" --- LLM 响应 ---")
@@ -454,8 +868,8 @@ class LocalQwenLlm(BaseLlm):
             print(f"请求失败: {str(e)}")
             # 返回默认响应
             default_response = {
-                "thinking": "选择查验目标",
-                "divine": 1
+                "thinking": "处理中",
+                "result": "完成"
             }
             content = json.dumps(default_response, ensure_ascii=False)
             return content, str(e)

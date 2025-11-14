@@ -1,12 +1,53 @@
 <!doctype html>
 <html>
   <head>
-    <title>AI vs 人类的狼人杀</title>
+    <title>AI vs 人类的狼人杀 - 带回放功能</title>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="src/styles.css">
     <script src="https://pixijs.download/release/pixi.js"></script>
   </head>
   <body>
+    <!-- 回放模式提示 -->
+    <div id="replay-hint" style="
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #FFD700;
+      padding: 10px 15px;
+      border-radius: 5px;
+      font-family: '钉钉进步体', sans-serif;
+      z-index: 999;
+      font-size: 14px;
+      display: none;
+    ">
+      🎮 <span id="replay-hint-text">回放功能已就绪！游戏结束后可使用右上角回放控制器</span>
+    </div>
+
     <script type="module" src="src/index.js"></script>
+
+    <script>
+      // 回放模式提示控制
+      window.showReplayHint = function(show) {
+        const hint = document.getElementById('replay-hint');
+        const hintText = document.getElementById('replay-hint-text');
+
+        if (show) {
+          hint.style.display = 'block';
+          setTimeout(() => {
+            hint.style.display = 'none';
+          }, 5000);
+        } else {
+          hint.style.display = 'none';
+        }
+      };
+
+      // 页面加载完成提示
+      window.addEventListener('load', function() {
+        console.log('🎮 狼人杀游戏已加载！增强AI系统 + 视频回放功能已启用');
+        console.log('📝 游戏结束后将自动显示回放控制器');
+        console.log('⏩ 也可以在控制台使用: window.replayController');
+      });
+    </script>
   </body>
 </html>

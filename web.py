@@ -315,6 +315,46 @@ def check_winner():
     recorder.record({"winner": result})
     return {"winner": result}
 
+# 回放相关API
+@app.get("/replay_data")
+def get_replay_data():
+    """获取游戏回放数据"""
+    try:
+        replay_data = game.history.get_replay_data()
+        return replay_data
+    except Exception as e:
+        return {"error": str(e), "events": [], "total_duration": 0}
+
+@app.post("/stop_recording")
+def stop_recording():
+    """停止记录游戏事件"""
+    try:
+        game.history.stop_recording()
+        return {"message": "Recording stopped"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/game_summary")
+def get_game_summary():
+    """获取游戏摘要信息"""
+    try:
+        players = game.get_players()
+        current_time = game.get_current_time()
+        winner = game.check_winner()
+
+        # 获取最近的发言和投票记录
+        recent_events = game.history.get_history(show_all=True)[-3:] if game.history.rounds else []
+
+        return {
+            "players": players,
+            "current_time": current_time,
+            "winner": winner,
+            "recent_events": recent_events,
+            "total_events": len([event for round in game.history.rounds for event in round.day_events + round.night_events])
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 
 
 
