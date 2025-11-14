@@ -1,0 +1,18 @@
+[project]
+name = "wolf-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "colorama>=0.4.6",
+    "dashscope>=1.13.0",
+    "fastapi>=0.68.0",
+    "openai>=1.0.0",
+    "pydantic>=1.10.0",
+    "pyyaml>=6.0.1",
+    "requests>=2.31.0",
+    "uvicorn>=0.15.0",
+    "volcengine-python-sdk>=1.0.106",
+    "zhipuai>=1.0.7",
+]
