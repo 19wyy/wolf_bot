@@ -31,9 +31,19 @@ class BaseLlm():
 
     def openai_like_generate(self, messages, stream=True, extra_body=None, **kwargs):
         try:
+            # 设置默认参数以增加AI思考深度
+            default_params = {
+                "max_tokens": 8192,  # 增加最大token数量
+                "temperature": 0.8,    # 稍微提高创造性
+                "top_p": 0.95,        # 增加多样性
+                "frequency_penalty": 0.1,  # 减少重复
+                "presence_penalty": 0.1   # 鼓励新话题
+            }
+
             params = {"model": self.model_name, "messages": messages, "stream": stream}
             if extra_body:
                 params["extra_body"] = extra_body
+            params.update(default_params)
             params.update(kwargs)
             response = self.client.chat.completions.create(**params)
             if stream:
@@ -452,15 +462,37 @@ class LocalQwenLlm(BaseLlm):
         alive_count = len(game_state["alive_players"])
         day = game_state["current_day"]
 
-        thinking = f"作为{game_state['player_id']}号预言家，我需要仔细分析当前局势：\n"
-        thinking += f"1. 当前是第{day}天，场上还有{alive_count}名存活玩家\n"
-        thinking += f"2. 已死亡玩家：{game_state['dead_players']}\n"
-        thinking += f"3. 我需要查验一个可疑目标来获取信息优势\n"
+        thinking = f"作为{game_state['player_id']}号预言家，我需要进行深入的局势分析：\n\n"
+        thinking += f"**当前游戏状态分析**：\n"
+        thinking += f"• 第{day}天，场上剩余{alive_count}名存活玩家\n"
+        thinking += f"• 已死亡玩家：{game_state['dead_players']}\n"
+        thinking += f"• 我的角色身份：预言家，属于好人阵营核心角色\n\n"
+
+        thinking += f"**当前局势评估**：\n"
+
+        # 分析存活玩家的可能角色
+        thinking += f"• 存活玩家分析：\n"
+        for player in game_state["alive_players"]:
+            if player != game_state["player_id"]:
+                thinking += f"  - {player}号玩家：需要观察其发言模式和行为\n"
+
+        thinking += f"\n**查验策略制定**：\n"
 
         if day == 1:
-            thinking += "4. 第一天查验，我需要选择一个看起来比较重要的玩家\n"
+            thinking += f"• 第一天查验策略：\n"
+            thinking += f"  - 优先查验发言较多或较少的玩家（极端行为通常有特殊原因）\n"
+            thinking += f"  - 关注可能的神职玩家（女巫、猎人等）\n"
+            thinking += f"  - 避免查验明显像是普通村民的玩家\n"
         else:
-            thinking += f"4. 第{day}天了，我需要根据之前的发言情况选择查验目标\n"
+            thinking += f"• 第{day}天查验策略：\n"
+            thinking += f"  - 回顾之前的投票模式和发言内容\n"
+            thinking += f"  - 查验行为异常或发言逻辑不清的玩家\n"
+            thinking += f"  - 验证我对某些玩家的猜测\n"
+
+        thinking += f"\n**信息价值分析**：\n"
+        thinking += f"• 验证结果对好人阵营的重要性\n"
+        thinking += f"• 如何利用查验信息引导其他玩家\n"
+        thinking += f"• 查验结果的保密策略\n"
 
         return thinking
 
@@ -471,28 +503,65 @@ class LocalQwenLlm(BaseLlm):
         day = game_state["current_day"]
         wolf_id = game_state["player_id"]
 
-        thinking = f"作为{wolf_id}号狼人，我需要制定策略：\n"
-        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
-        thinking += f"2. 已死亡玩家：{dead_players}\n"
+        thinking = f"作为{wolf_id}号狼人，我需要进行全面的战术分析：\n\n"
+        thinking += f"**狼人团队当前态势**：\n"
+        thinking += f"• 第{day}天，场上剩余{len(alive_players)}名玩家\n"
+        thinking += f"• 我方狼人队友：{game_state.get('wolf_allies', [])}\n"
+        thinking += f"• 已死亡玩家：{dead_players}\n"
+        thinking += f"• 狼人胜利条件：狼人数 ≥ 好人数\n\n"
 
-        # 分析死亡玩家
-        if dead_players:
-            thinking += "3. 死亡玩家分析："
-            for dead in dead_players:
-                if dead not in game_state["alive_players"]:
-                    thinking += f"{dead}号已死，"
-            thinking += "我们需要优先除掉神职\n"
+        thinking += f"**威胁等级评估**：\n"
+
+        # 分析神职威胁
+        threat_analysis = {
+            "预言家": "最高威胁 - 能查验身份，必须尽快清除",
+            "女巫": "高威胁 - 拥有解药和毒药，能破坏狼人计划",
+            "猎人": "高威胁 - 死亡时会反击带走我方成员",
+            "村民": "中等威胁 - 数量优势，需要逐步减少"
+        }
+
+        thinking += f"• 存活玩家威胁分析：\n"
+        for player in alive_players:
+            if player != wolf_id:
+                thinking += f"  - {player}号玩家：待观察，重点关注其发言逻辑\n"
+
+        thinking += f"\n**战术目标制定**：\n"
 
         if vote_round == 1:
-            thinking += f"4. 第一轮投票，我需要独立选择一个威胁较大的目标\n"
-            thinking += "5. 优先目标顺序：预言家 > 女巫 > 猎人 > 有威胁的村民\n"
+            thinking += f"• 第一轮独立决策：\n"
+            thinking += f"  - 分析各位玩家的发言模式和投票倾向\n"
+            thinking += f"  - 识别可能的神职特征（发言谨慎/逻辑性强）\n"
+            thinking += f"  - 考虑投票后续影响和团队协调需求\n"
+            thinking += f"  - 目标选择原则：\n"
+            thinking += f"    • 优先清除预言家（信息威胁）\n"
+            thinking += f"    • 其次针对女巫（技能威胁）\n"
+            thinking += f"    • 避免过早暴露团队配合\n"
         else:
-            thinking += f"4. 第二轮投票，我需要协调团队意见\n"
+            thinking += f"• 第二轮团队协调：\n"
             if first_round_results:
-                thinking += "5. 第一轮投票结果分析：\n"
+                thinking += f"  - 第一轮投票统计：\n"
+                vote_counts = {}
                 for result in first_round_results:
-                    thinking += f"   - {result['player_index']}号投给{result['kill']}号，理由：{result['reason']}\n"
-                thinking += "6. 我应该跟随多数狼人的选择来保持团队一致性\n"
+                    target = result.get('kill', -1)
+                    vote_counts[target] = vote_counts.get(target, 0) + 1
+
+                for target, count in vote_counts.items():
+                    thinking += f"    • {target}号：{count}票\n"
+
+                # 分析多数票选择
+                if vote_counts:
+                    max_votes = max(vote_counts.values())
+                    leading_targets = [t for t, c in vote_counts.items() if c == max_votes]
+                    if len(leading_targets) == 1:
+                        thinking += f"  - 多数选择：{leading_targets[0]}号\n"
+                        thinking += f"  - 协调策略：跟随多数票以保持一致性\n"
+                    else:
+                        thinking += f"  - 投票分散，需要进一步协调\n"
+
+        thinking += f"\n**长期战略考虑**：\n"
+        thinking += f"• 控制发言节奏，避免过早暴露\n"
+        thinking += f"• 制造混乱，嫁祸给好人玩家\n"
+        thinking += f"• 保护队友，避免相互怀疑\n"
 
         return thinking
 
@@ -502,20 +571,67 @@ class LocalQwenLlm(BaseLlm):
         dead_players = game_state["dead_players"]
         day = game_state["current_day"]
         witch_id = game_state["player_id"]
+        cured_someone = game_state.get("cured_someone", "还没使用过救治技能")
+        poisoned_someone = game_state.get("poisoned_someone", "还没使用过毒杀技能")
 
-        thinking = f"作为{witch_id}号女巫，我需要谨慎使用技能：\n"
-        thinking += f"1. 当前是第{day}天，场上存活玩家：{alive_players}\n"
-        thinking += f"2. 已死亡玩家：{dead_players}\n"
-        thinking += f"3. 今晚情况：{tonight_event}\n"
+        thinking = f"作为{witch_id}号女巫，我需要进行精确的技能决策：\n\n"
+        thinking += f"**女巫技能库存状态**：\n"
+        thinking += f"• 解药状态：{cured_someone}\n"
+        thinking += f"• 毒药状态：{poisoned_someone}\n"
+        thinking += f"• 第{day}天，场上剩余{len(alive_players)}名玩家\n"
+        thinking += f"• 已死亡玩家：{dead_players}\n\n"
 
-        if "没有人将被杀害" in tonight_event:
-            thinking += "4. 今晚是平安夜，我需要考虑是否使用毒药\n"
-            thinking += "5. 如果使用毒药，我需要根据之前的发言判断谁是狼人\n"
-            thinking += "6. 毒药很珍贵，只有在确定目标时才使用\n"
+        thinking += f"**今晚局势分析**：\n"
+        thinking += f"• 事件：{tonight_event}\n"
+
+        # 解析被杀玩家
+        killed_player = None
+        if "号玩家将被杀害" in tonight_event:
+            try:
+                killed_player = int(tonight_event.split("号玩家将被杀害")[0])
+            except:
+                pass
+        elif "将被杀害的玩家是" in tonight_event:
+            try:
+                killed_player = int(tonight_event.split("将被杀害的玩家是")[1])
+            except:
+                pass
+
+        if killed_player:
+            thinking += f"• 被杀玩家：{killed_player}号\n\n"
+            thinking += f"**解药使用决策分析**：\n"
+            if cured_someone != "还没使用过救治技能":
+                thinking += f"• 解药已使用，无法救人\n"
+            else:
+                thinking += f"• 需要评估{killed_player}号的价值：\n"
+                thinking += f"  - 分析{killed_player}号的发言模式和行为特征\n"
+                thinking += f"  - 判断其是否可能是神职角色（预言家/猎人）\n"
+                thinking += f"  - 考虑救人后的局势影响\n"
+                thinking += f"• 解药使用原则：\n"
+                thinking += f"  - 优先拯救明确的神职玩家\n"
+                thinking += f"  - 考虑游戏平衡和团队配置\n"
+                thinking += f"  - 避免浪费在普通村民身上\n"
         else:
-            thinking += "4. 今晚有玩家被杀，我需要决定是否使用解药\n"
-            thinking += "5. 我要分析被杀的玩家是否是神职，是否值得救\n"
-            thinking += "6. 同时考虑是否用毒药换掉一个可疑目标\n"
+            thinking += f"\n**平安夜策略分析**：\n"
+            thinking += f"• 今晚无人死亡，可以专注使用毒药\n"
+            thinking += f"• 毒药使用考虑因素：\n"
+
+        thinking += f"\n**毒药使用决策分析**：\n"
+        if poisoned_someone != "还没使用过毒杀技能":
+            thinking += f"• 毒药已使用，无法额外攻击\n"
+        else:
+            thinking += f"• 目标选择标准：\n"
+            thinking += f"  - 发言逻辑混乱或行为可疑的玩家\n"
+            thinking += f"  - 可能的狼人伪装\n"
+            thinking += f"  - 对好人阵营有威胁的目标\n"
+            thinking += f"• 风险评估：\n"
+            thinking += f"  - 避免错杀神职玩家\n"
+            thinking += f"  - 确保有足够证据支持判断\n"
+
+        thinking += f"\n**技能使用时机考虑**：\n"
+        thinking += f"• 当前游戏阶段的重要性\n"
+        thinking += f"• 技能使用的长远影响\n"
+        thinking += f"• 保持女巫身份的隐蔽性\n"
 
         return thinking
 
@@ -691,11 +807,26 @@ class LocalQwenLlm(BaseLlm):
                     first_round_results = message_dict.get("第一轮投票结果", [])
                     thinking = self.generate_wolf_thinking(game_state, 2, first_round_results)
 
+                    # 获取狼人队友信息
+                    wolf_allies = message_dict.get("你的狼人队友", [])
+                    ally_numbers = []
+                    for ally_info in wolf_allies:
+                        # 解析队友信息，格式如 "3号玩家是狼人, 目前存活"
+                        try:
+                            ally_num = int(ally_info.split("号玩家")[0])
+                            ally_numbers.append(ally_num)
+                        except:
+                            continue
+
+                    # 排除自己和狼人队友
+                    valid_targets = [p for p in game_state["alive_players"]
+                                   if p != game_state["player_id"] and p not in ally_numbers]
+
                     # 分析第一轮投票结果，选择跟随多数或协调
                     vote_count = {}
                     for result in first_round_results:
                         target = result.get("kill", -1)
-                        if target != -1 and target in valid_targets:  # 确保目标是存活的
+                        if target != -1 and target in valid_targets:  # 确保目标是存活的且不是队友
                             vote_count[target] = vote_count.get(target, 0) + 1
 
                     if vote_count:
@@ -717,7 +848,29 @@ class LocalQwenLlm(BaseLlm):
                 else:
                     # 第一轮投票，独立选择
                     thinking = self.generate_wolf_thinking(game_state, 1)
-                    selected_player = random.choice(valid_targets) if valid_targets else 1
+
+                    # 获取狼人队友信息
+                    wolf_allies = message_dict.get("你的狼人队友", [])
+                    ally_numbers = []
+                    for ally_info in wolf_allies:
+                        # 解析队友信息，格式如 "3号玩家是狼人, 目前存活"
+                        try:
+                            ally_num = int(ally_info.split("号玩家")[0])
+                            ally_numbers.append(ally_num)
+                        except:
+                            continue
+
+                    # 排除自己和狼人队友
+                    valid_targets = [p for p in game_state["alive_players"]
+                                   if p != game_state["player_id"] and p not in ally_numbers]
+
+                    if not valid_targets:
+                        # 如果没有有效目标（只剩狼人），则随机选择一个非自己玩家
+                        all_non_self = [p for p in game_state["alive_players"] if p != game_state["player_id"]]
+                        selected_player = random.choice(all_non_self) if all_non_self else 1
+                        thinking += f"⚠️ 警告：场上只剩狼人，被迫选择队友{selected_player}号\n"
+                    else:
+                        selected_player = random.choice(valid_targets)
 
                     reasons = [
                         f"分析认为{selected_player}号可能是预言家，需要优先清除",

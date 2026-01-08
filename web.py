@@ -339,7 +339,10 @@ def get_game_summary():
     """获取游戏摘要信息"""
     try:
         players = game.get_players()
-        current_time = game.get_current_time()
+        current_time = {
+            "current_day": game.get_day(),
+            "current_phase": game.current_phase
+        }
         winner = game.check_winner()
 
         # 获取最近的发言和投票记录
